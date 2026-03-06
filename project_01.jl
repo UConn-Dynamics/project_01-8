@@ -149,101 +149,189 @@ begin
 θ_double_dot = build_function(ode_symbolic, θ, D(θ), g, L, m, Ω, ω; expression=Val(false))
 end
 
-# ╔═╡ 20795ae0-8924-4225-8599-447e6ace962a
-md"""
+# ╔═╡ cba72042-130b-4a50-8408-75f65d344290
+md"""### Solving Acceleration Differential Equation
 
-Once acceleration is calculated, the position and velocity of the pendulum can be solved via evaluation of the ODE.
+Once acceleration is calculated, the angular speed and angle of the pendulum can be solved via evaluation of the ODE.
 
 """
 
+# ╔═╡ 9d977226-9f8d-4ffe-bfb3-68c67f40e732
 begin
+	# Numerical parameters
+	
+	g_val = 9.81     
+	
+	L_val = 0.15     
+	
+	m_val = 0.1      
+	
+	w1_val = 0.1     
+		 
+	
+	acceleration(θ, θ̇, Ω) = θ_double_dot(θ, θ̇, g_val, L_val, m_val, Ω, w1_val)
+	 
+	
+	function pendulum!(du, u, p, t)
+	
+	    θ, θ̇ = u
+	
+	    Ω_val = p[1]
+	
+	    du[1] = θ̇
+	
+	    du[2] = acceleration(θ, θ̇, Ω_val)
+	
+	end
+	
+	 
+	
+	# Initial conditions: 30° release with 0 initial angular velocity
+	
+	θ0 = deg2rad(30)
+	
+	θ̇0 = 0.0
+	
+	u0 = [θ0, θ̇0]
+	
+	tspan = (0.0, 10.0)  
+	
+	 
+	
+	Ω_slow = 0.4        # rad/s
+	
+	prob_slow = ODEProblem(pendulum!, u0, tspan, [Ω_slow])
+	
+	sol_slow = solve(prob_slow, Tsit5())
+	
+	 
+	
+	Ω_fast = 14     
+	
+	prob_fast = ODEProblem(pendulum!, u0, tspan, [Ω_fast])
+	
+	sol_fast = solve(prob_fast, Tsit5())
+end
 
-    # unwrap symbolic function
+# ╔═╡ e209dc18-c1b9-4a6a-b74a-de94aa277472
+md"""### Plots/Animations
 
-    θdd_fun = θ_double_dot[1]
+The following plot shows the angle vs. time for both the slow and fast rotation speeds. As expected, the shape of the angle curves is constant through the time span for both speeds. Each speed is clearly distinguishable via the freqeuncies for each.
 
- 
+"""
 
-    # parameters
+# ╔═╡ a22cf6ba-f624-4f88-923a-c018a63659fb
+begin
+    # -----------------------------
+    # Geometry / frame dimensions
+    # -----------------------------
+    h1 = 0.2          # frame height [m]
+    w1 = 0.1          # frame radial offset [m]
+    Lp = L_val      # pendulum length [m]
 
-    g_param = 9.81
+    # -----------------------------
+    # 1) Plot angle vs time
+    # -----------------------------
+    P = plot(
+        title = "Spinning Pendulum Angle vs Time",
+        xlabel = "Time [s]",
+        ylabel = "Angle θ [deg]",
+        linewidth = 3,
+        legend = :topright
+    )
 
-    L_param = 0.15
+    plot!(P, sol_slow.t, sol_slow[1, :] .* 180 / pi, label = "Slow rotation Ω = $Ω_slow rad/s")
+    plot!(P, sol_fast.t, sol_fast[1, :] .* 180 / pi, label = "Fast rotation Ω = $Ω_fast rad/s")
 
-    m_param = 0.1
+    P
+end
 
-    w_param = 0.1
+# ╔═╡ 9646824b-c197-45be-85b2-06efaace3ac5
 
- 
 
-    Ω_slow = 0.3
+# ╔═╡ 81b27a6c-5dcf-41bd-8516-58ac24e15f2c
+begin
+    # -----------------------------
+    # Helper function:
+    # Convert θ(t) in rotating frame to fixed-frame coordinates
+    # -----------------------------
+    function pendulum_xyz(theta, t, Ω, w1, h1, Lp)
+        ϕ = Ω * t
 
-    Ω_fast = 14.0
+        # Position in rotating frame:
+        # x' = w1 + L sin(θ)
+        # z  = h1 - L cos(θ)
+        xprime = w1 + Lp * sin(theta)
+        z = h1 - Lp * cos(theta)
 
- 
+        # Rotate x' about z-axis into inertial frame
+        x = xprime * cos(ϕ)
+        y = xprime * sin(ϕ)
 
-    # initial conditions
-
-    θ0 = 30*pi/180
-
-    θd0 = 0.0
-
-    u0 = [θ0, θd0]
-
- 
-
-    tspan = (0.0, 11.0)
-
- 
-
-    # ODE system
-
-    function pendulum_eom!(du,u,p,t)
-
- 
-
-        θ = u[1]
-
-        θdot = u[2]
-
- 
-
-        g,L,m,Ω,w = p
-
- 
-
-        du[1] = θdot
-
-        du[2] = θdd_fun(θ,θdot,g,L,m,Ω,w)
-
- 
-
+        return x, y, z
     end
 
- 
+    # -----------------------------
+    # Animation function
+    # -----------------------------
+    function animate_spinning_pendulum(solution, Ω, filename;
+                                       w1 = 0.1, h1 = 0.2, Lp = 0.15)
 
-    # parameter sets
+        anim = @animate for i in 1:length(solution.t)
+            t = solution.t[i]
+            θ = solution[1, i]
 
-    p_slow = (g_param,L_param,m_param,Ω_slow,w_param)
+            # pivot point (top of pendulum) rotating with frame
+            xp = w1 * cos(Ω * t)
+            yp = w1 * sin(Ω * t)
+            zp = h1
 
-    p_fast = (g_param,L_param,m_param,Ω_fast,w_param)
+            # bob position
+            xb, yb, zb = pendulum_xyz(θ, t, Ω, w1, h1, Lp)
 
- 
+            plot(
+                xlim = (-0.3, 0.3),
+                ylim = (-0.3, 0.3),
+                zlim = (0.0, 0.3),
+                xlabel = "x [m]",
+                ylabel = "y [m]",
+                zlabel = "z [m]",
+                title = "Spinning Pendulum Animation, t = $(round(t, digits=2)) s",
+                legend = false,
+                aspect_ratio = :equal,
+                camera = (35, 25)
+            )
 
-    # solve
+            # vertical rotation axis
+            plot!([0, 0], [0, 0], [0, h1 + 0.03], lw = 2)
 
-    prob_slow = ODEProblem(pendulum_eom!,u0,tspan,p_slow)
+            # top arm from axis to pivot
+            plot!([0, xp], [0, yp], [h1, h1], lw = 3)
 
-    sol_slow = solve(prob_slow,Tsit5())
+            # pendulum rod
+            plot!([xp, xb], [yp, yb], [zp, zb], lw = 4)
 
- 
+            # pivot point
+            scatter!([xp], [yp], [zp], markersize = 5)
 
-    prob_fast = ODEProblem(pendulum_eom!,u0,tspan,p_fast)
+            # bob
+            scatter!([xb], [yb], [zb], markersize = 8)
+        end
 
-    sol_fast = solve(prob_fast,Tsit5())
+        gif(anim, filename, fps = 25)
+    end
+end
 
- 
+# ╔═╡ 4ba9ed88-2d39-43cc-9bb2-9143b90cfdc9
+begin
+    animate_spinning_pendulum(sol_slow, Ω_slow, "spinning_pendulum_slow.gif";
+                              w1 = w1, h1 = h1, Lp = Lp)
+end
 
+# ╔═╡ 8077d870-2626-4a8b-ad9e-24c9be4d7cac
+begin
+    animate_spinning_pendulum(sol_fast, Ω_fast, "spinning_pendulum_fast.gif";
+                              w1 = w1, h1 = h1, Lp = Lp)
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -3151,6 +3239,13 @@ version = "1.13.0+0"
 # ╠═fedbfe49-380d-4441-9824-4a0f6462dbc5
 # ╠═e0a031ae-4dda-4eaf-868d-9927f2a26951
 # ╠═08534788-e42a-4fbe-81fc-f69ebce5e67e
-# ╠═20795ae0-8924-4225-8599-447e6ace962a
+# ╠═cba72042-130b-4a50-8408-75f65d344290
+# ╠═9d977226-9f8d-4ffe-bfb3-68c67f40e732
+# ╠═e209dc18-c1b9-4a6a-b74a-de94aa277472
+# ╟─a22cf6ba-f624-4f88-923a-c018a63659fb
+# ╠═9646824b-c197-45be-85b2-06efaace3ac5
+# ╟─81b27a6c-5dcf-41bd-8516-58ac24e15f2c
+# ╠═4ba9ed88-2d39-43cc-9bb2-9143b90cfdc9
+# ╠═8077d870-2626-4a8b-ad9e-24c9be4d7cac
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
